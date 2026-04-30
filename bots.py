@@ -9,6 +9,7 @@ from aiogram.utils import executor
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 CHANNEL_ID = os.getenv("CHANNEL_ID")
+MAX_PARTICIPANTS = 6
 
 if not TOKEN or not ADMIN_ID or not CHANNEL_ID:
     raise ValueError("Set BOT_TOKEN, ADMIN_ID, CHANNEL_ID environment variables")
@@ -18,15 +19,20 @@ dp = Dispatcher(bot)
 
 participants = []
 message_id = None
+giveaway_title = ""
+waiting_for_title = False
 
 def admin_keyboard():
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("🎁 Создать розыгрыш", callback_data="create"))
     return kb
 
-def join_keyboard():
+def join_keyboard(active=True):
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🎉 Участвовать", callback_data="join"))
+    if active:
+        kb.add(InlineKeyboardButton("🎉 Участвовать", callback_data="join"))
+    else:
+        kb.add(InlineKeyboardButton("❌ Набор закрыт", callback_data="closed"))
     return kb
 
 @dp.message_handler(commands=['start'])
@@ -38,38 +44,58 @@ async def start(message: types.Message):
 
 @dp.callback_query_handler(lambda c: c.data == "create")
 async def create_giveaway(callback: types.CallbackQuery):
-    global participants, message_id
+    global waiting_for_title
 
     if callback.from_user.id != ADMIN_ID:
         return
 
+    waiting_for_title = True
+    await callback.message.answer("✏️ Пришлите название розыгрыша:")
+    await callback.answer()
+
+@dp.message_handler(lambda message: message.from_user.id == ADMIN_ID)
+async def process_giveaway_title(message: types.Message):
+    global participants, message_id, giveaway_title, waiting_for_title
+
+    if not waiting_for_title:
+        return
+
+    giveaway_title = message.text
+    waiting_for_title = False
     participants = []
 
     msg = await bot.send_message(
         CHANNEL_ID,
-        "🎲 РОЗЫГРЫШ!\n\nУчастники:\n(пусто)",
-        reply_markup=join_keyboard()
+        f"🎁 РОЗЫГРЫШ: {giveaway_title}\n\nПРОВОЖУ ТУТ @first_time67\n\nУчастники (0/{MAX_PARTICIPANTS}):\n(пусто)",
+        reply_markup=join_keyboard(True)
     )
 
     message_id = msg.message_id
-    await callback.answer("Розыгрыш создан!")
+    await message.answer("✅ Розыгрыш создан и опубликован!")
 
 async def update_message():
-    text = "🎲 РОЗЫГРЫШ!\n\nУчастники:\n"
+    text = f"🎁 РОЗЫГРЫШ: {giveaway_title}\n\nПРОВОЖУ ТУТ @first_time67\n\nУчастники ({len(participants)}/{MAX_PARTICIPANTS}):\n"
 
     if not participants:
         text += "(пусто)"
     else:
         for p in participants:
-            name = p["username"] or p["name"]
-            text += f"{p['number']}. @{name}\n"
+            name = p['username'] or p['name']
+            if p['username']:
+                text += f"{p['number']}. @{name}\n"
+            else:
+                text += f"{p['number']}. {name}\n"
 
     await bot.edit_message_text(
         text,
         chat_id=CHANNEL_ID,
         message_id=message_id,
-        reply_markup=join_keyboard()
+        reply_markup=join_keyboard(len(participants) < MAX_PARTICIPANTS)
     )
+
+@dp.callback_query_handler(lambda c: c.data == "closed")
+async def closed(callback: types.CallbackQuery):
+    await callback.answer("Набор участников уже закрыт")
 
 @dp.callback_query_handler(lambda c: c.data == "join")
 async def join(callback: types.CallbackQuery):
@@ -77,7 +103,11 @@ async def join(callback: types.CallbackQuery):
 
     user = callback.from_user
 
-    if user.id in [p["id"] for p in participants]:
+    if len(participants) >= MAX_PARTICIPANTS:
+        await callback.answer("Лимит участников достигнут")
+        return
+
+    if user.id in [p['id'] for p in participants]:
         await callback.answer("Ты уже участвуешь")
         return
 
@@ -91,24 +121,26 @@ async def join(callback: types.CallbackQuery):
     await callback.answer(f"Ты участник №{len(participants)}")
     await update_message()
 
-    if len(participants) == 6:
-        await bot.send_message(CHANNEL_ID, "🎲 Определяем победителя...")
+    if len(participants) == MAX_PARTICIPANTS:
+        await bot.send_message(CHANNEL_ID, "🎲 Набрано 6 участников! Определяем победителя...")
 
         dice_msg = await bot.send_dice(CHANNEL_ID)
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
 
         dice_value = dice_msg.dice.value
-        winner = participants[dice_value - 1]
+        winner_index = min(dice_value, MAX_PARTICIPANTS) - 1
+        winner = participants[winner_index]
 
-        name = winner["username"] or winner["name"]
+        name = winner['username'] or winner['name']
+        winner_tag = f"@{name}" if winner['username'] else name
 
         await bot.send_message(
             CHANNEL_ID,
-            f"🎁 РОЗЫГРЫШ ЗАВЕРШЁН!\n\n"
+            f"🎁 РОЗЫГРЫШ '{giveaway_title}' ЗАВЕРШЁН!\n\n"
             f"🎲 Выпало число: {dice_value}\n\n"
-            f"🏆 Победитель:\n@{name}"
+            f"🏆 Победитель:\n{winner_tag}"
         )
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    executor.start_polling(dp)
+    executor.start_polling(dp, skip_updates=True)
