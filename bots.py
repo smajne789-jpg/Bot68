@@ -47,7 +47,7 @@ async def create_giveaway(callback: types.CallbackQuery):
 
     msg = await bot.send_message(
         CHANNEL_ID,
-        "🎁ТОЛЬКО ПЕРВЫЕ 6 ЧЕЛОВЕК МОГУТ ПОУЧАСТВОВАТЬ!\n\nУчастники:\n(пусто)",
+        "🎁 Розыгрыш!\n\nУчастники:\n(пусто)",
         reply_markup=join_keyboard()
     )
 
@@ -55,7 +55,7 @@ async def create_giveaway(callback: types.CallbackQuery):
     await callback.answer("Розыгрыш создан!")
 
 async def update_message():
-    text = "🎁ТОЛЬКО ПЕРВЫЕ 6 ЧЕЛОВЕК МОГУТ ПОУЧАСТВОВАТЬ!\n\nУчастники:\n"
+    text = "⚔️ РОЗЫГРЫШ!\n\nУчастники:\n"
 
     if not participants:
         text += "(пусто)"
