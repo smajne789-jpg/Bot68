@@ -243,7 +243,7 @@ async def profile(call: CallbackQuery):
     wager = await get_wager(call.from_user.id)
 
     if wager > 0:
-        text += f"\n🎯 Осталось отыграть: <b>{wager}$</b>""
+        text += f"\n🎯 Осталось отыграть: <b>{wager}$</b>"
 
     await call.message.edit_text(text, reply_markup=profile_kb())
 
